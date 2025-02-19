@@ -1,6 +1,6 @@
 Title: Building a TODO List App with Clojure + Datomic Pro - [Part 2]
 Date: 2025-02-19
-Tags: clojure, datomic
+Tags: datomic, clojure
 
 In Part I we completed the following
 
@@ -61,7 +61,7 @@ To continue let's pass the routes to the server and add some functions to start 
 
 We can call `(start-server)` in the REPL and navigate to navigate to http://localhost:8890/ in the browser , we should see something like this.
 
-![image-20250217155430643](../assets/image-20250217155430643.png)With a working HTTP  we will build the HTML (hiccup) skeleton.
+![image-20250217155430643](assets/image-20250217155430643.png)With a working HTTP  we will build the HTML (hiccup) skeleton.
 
 ```clojure
 (ns server
@@ -216,7 +216,7 @@ then in the REPL
 
 now let's got to our browser and navigate to http://localhost:8890/ , we should see something like this.
 
-![image-20250130201044117](../assets/image-20250130201044117.png)
+![image-20250130201044117](assets/image-20250130201044117.png)
 
 Awesome, we have our beautiful UI working, we don't need anything else for now. Next step is to fetch the data from Datomic instead of db-example. Let's go back to the `src/todo_db.clj` file and take a look at the query we use previously to fetch lists and items.
 

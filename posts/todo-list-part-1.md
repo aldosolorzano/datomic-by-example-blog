@@ -1,6 +1,6 @@
 Title: Building a TODO List App with Clojure + Datomic Pro
 Date: 2025-02-19
-Tags: clojure
+Tags: datomic, clojure
 
 Are you looking for a way to get started learning Datomic, or are you picking Datomic up again after some time away from it? If so, this tutorial is for you. By building a straightforward to-do list app with Clojure and Datomic, we will identify the mental model of Datomic and demonstrate how to use its theoretical insights in a practical context. Your journey through the tutorial will equip you with the skills to continue exploring Datomic on your own.
 

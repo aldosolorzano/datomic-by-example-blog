@@ -6,7 +6,8 @@ body {
   color: rgb(51, 65, 85)
 }
 
-h1, h2, h3 {
+h1, h2, h3, h4, strong {
+  color: #45ad65;
   font-weight: 800;
 }
 
@@ -15,7 +16,7 @@ a {
 }
 
 .wrapper {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto 0 auto;
   padding: 0 15px;
 }
@@ -30,7 +31,7 @@ p {
 }
 
 .site-header {
-  border-top: 2px solid #424242;
+  border-top: 2px solid #45ad65;
   border-bottom: 1px solid #e8e8e8;
   min-height: 55.95px;
   position: relative;
@@ -69,4 +70,8 @@ ul.index {
 
 code {
   white-space: pre;
+}
+
+img {
+  max-width: 900px;
 }
