@@ -6,7 +6,7 @@ body {
   color: rgb(51, 65, 85)
 }
 
-h1, h2, h3, h4, strong {
+h1, h2, h3, h4 {
   color: #45ad65;
   font-weight: 800;
 }
