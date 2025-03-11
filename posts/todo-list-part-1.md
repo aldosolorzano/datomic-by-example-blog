@@ -1,5 +1,5 @@
 Title: Building a TODO List App with Clojure + Datomic Pro - [Part 1]
-Date: 2025-02-19
+Date: 2025-03-12
 Tags: datomic, clojure
 
 Are you looking for a way to get started learning Datomic, or are you picking Datomic up again after some time away from it? If so, this tutorial is for you. By building a straightforward to-do list app with Clojure and Datomic, we will identify the mental model of Datomic and demonstrate how to use its theoretical insights in a practical context. Your journey through the tutorial will equip you with the skills to continue exploring Datomic on your own. You will learn key characteristics of what makes Datomic special.
@@ -83,10 +83,10 @@ The code can be found in the [datomic-tutorials](https://github.com/Datomic/dato
 
 1. Install Datomic and explore it using the REPL
 2. [Build a simple UI and display the database data there](todo-list-part-2.html)
-3. CRUD for Lists and Items
-4. Add filters, time based, by status and display the history of status transitions
-5. Deploy application
-6. Use [Datomic Cloud](https://www.datomic.com/cloud.html) as the database
+3. [CRUD for Lists and Items](todo-list-part-3.html)
+4. [Add filters, time based, by status and display the history of status transitions](todo-list-part-4.html)
+5. [Deploy application](todo-list-part-5.html)
+6. [Develop with Datomic Cloud](todo-list-part-6.html)
 
 ### Technologies
 

@@ -1,5 +1,5 @@
 Title: Building a TODO List App with Clojure + Datomic Pro - [Part 2]
-Date: 2025-02-19
+Date: 2025-03-12
 Tags: datomic, clojure
 
 In [Part I](todo-list-part-1.html) we completed the following
