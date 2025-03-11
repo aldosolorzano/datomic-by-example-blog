@@ -77,10 +77,12 @@ If at any point some word it’s not clear or was left out from clear explanatio
 
 We want to build an app that will do everything we typically expect of a todo app (create list items, mark items completed, delete items), plus a couple of powerful features that Datomic makes it trivial to enable them. For example, have you ever wanted add some time filters so that you could ask your app, "How was my life yesterday?" and display the evolution of the statuses of an item, a history log of changes. In *Part 1*, we'll focus on the foundation that will allow us to add more features as we go.
 
+The code can be found in the [datomic-tutorials](https://github.com/Datomic/datomic-tutorials/tree/main/todo-app/part-1/todo-app) repository.
+
 ### Parts
 
 1. Install Datomic and explore it using the REPL
-2. [Build a simple UI and display the database data there](../../part-2/todo-app/README.md)
+2. [Build a simple UI and display the database data there](todo-list-part-2.html)
 3. CRUD for Lists and Items
 4. Add filters, time based, by status and display the history of status transitions
 5. Deploy application
