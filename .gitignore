@@ -1,5 +1,8 @@
-.clj-kondo/*
-.cpcache/
 .work/
+.cpcache/
+.idea/
+.nrepl-port
+.clj-kondo/
+.lsp/.cache/
 
 public

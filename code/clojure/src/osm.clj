@@ -1,8 +1,10 @@
 (ns osm
   "OpenStreetMap data set experiment"
   (:require [clojure.data.xml :as xml]
-            [clojure.java.io :as io]
-            [datomic.api :as d])
+   [clojure.java.io :as io]
+   [datomic.api :as d]
+   [datomic.cache :as cache]
+   [datomic.domain :as domain])
   (:import com.uber.h3core.H3Core))
 
 (defn altmod
@@ -13,8 +15,8 @@
    https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/"
   ^long [^long x ^long max]
   (-> (bit-and x 0xffffffff)
-      (unchecked-multiply max)
-      (unsigned-bit-shift-right 32)))
+    (unchecked-multiply max)
+    (unsigned-bit-shift-right 32)))
 
 (def ^:const m1 (unchecked-long 0xbf58476d1ce4e5b9))
 (def ^:const m2 (unchecked-long 0x94d049bb133111eb))
@@ -30,9 +32,9 @@
   result in large differences in output values after mixing."
   ^long [^long x]
   (let [r1 (-> (bit-xor x (unsigned-bit-shift-right x 30))
-               (unchecked-multiply m1))
+             (unchecked-multiply m1))
         r2 (-> (bit-xor r1 (unsigned-bit-shift-right r1 27))
-               (unchecked-multiply m2))]
+             (unchecked-multiply m2))]
     (bit-xor r2 (unsigned-bit-shift-right r2 31))))
 
 (def h3impl (delay (H3Core/newInstance)))
@@ -55,24 +57,27 @@
      :lat (parse-double lat)
      :lon (parse-double lon)}))
 
+(declare HASHED?)
 (defn location-entity
   "returns an entity map whose (implicit) partition is determined by hashing the
   given lat lon with H3, with medium resolution"
   [lat lon]
   (let [h3 (h3-cell lat lon DEFAULT_H3_RES)
-        part (-> h3 mix64 (altmod 512000) d/implicit-part)]
-    {:db/id (d/tempid part)
-     :location/lat+lon [lat lon]
-     :location/h3-region h3}))
+        part (-> h3 mix64 (altmod 512000) d/implicit-part)
+        entity {:location/lat+lon [lat lon]
+                :location/h3-region h3}]
+    (if HASHED?
+      (assoc entity :db/id (d/tempid part))
+      entity)))
 
 (defn osm-node->tx-data
   "turns OSM info into transaction data"
   [{:keys [osm/id osm/info lat lon]}]
   (let [{:strs [place name]} info]
     (merge (location-entity lat lon)
-           (cond-> {:osm/id id}
-             place (assoc :osm/place place)
-             name (assoc :osm/name name)))))
+      (cond-> {:osm/id id}
+        place (assoc :osm/place place)
+        name (assoc :osm/name name)))))
 
 (def schema
   [{:db/ident :osm/id
@@ -100,74 +105,65 @@
 (defn points-close-to
   "given a h3 region returns other points within this same region"
   [db h3]
-  (d/query {:query '{:find [[(pull ?o [:db/id :osm/name :location/lat+lon :location/h3-region]) ...]]
-                :in [$ ?h3]
-                :where [[?o :location/h3-region ?h3]]}
+  (d/query {:query '{:find [[(pull ?o [:db/id :osm/name :location/lat+lon :location/h3-region]) ...]]}
+            :in [$ ?h3]
+            :where [[?o :location/h3-region ?h3]]
             :args [db h3]
             :io-context :points/close}))
 
 (defn points-close-to*
   "given a h3 region returns other points within this same region"
   [db h3]
-  (d/query {:query '{:find ?o
-                :in [$ ?h3]
-                :where [[?o :location/h3-region ?h3]]}
+  (d/query {:query '{:find [?o]
+                     :in [$ ?h3]
+                     :where [[?o :location/h3-region ?h3]]}
             :args [db h3]
             :io-context :points/close}))
 
+(defn process-file
+  [file]
+  (with-open [rdr (io/reader file)]
+    (into []
+      (comp (filter #(= (:tag %) :node)) ;; extract only <node ...>
+        (map #(-> % xml-node->data osm-node->tx-data)))
+      (:content (xml/parse rdr :include-node? #{:element})))))
+
 (defn ingest
-  "reads osm datasets, converts them into tx-data and transacts"
-  [conn osm-file]
-  (with-open [rdr (io/reader osm-file)]
-    (let [root (xml/parse rdr :include-node? #{:element})]
-      (transduce (comp (filter #(= (:tag %) :node)) ;; extract only <node ...>
-                       (map #(-> % xml-node->data osm-node->tx-data))
-                       (partition-all 1000))
-                 (completing
-                  (fn [conn batch]
-                    (d/transact conn batch)
-                    (println ".")
-                    conn))
-                 conn
-                 (:content root)))))
-
-
+  "reads osm datasets, converts them into tx-data, interleaves data between the diferent datasets and transacts"
+  [conn osm-files]
+  (let [interleaved-data (apply interleave (map process-file osm-files))]
+    (run! (fn [batch] (d/transact conn batch)(println "."))
+      (partition-all 1000 interleaved-data))))
 
 (comment
   (def path "/home/aldo/Downloads/place-info/")
   (def uri "datomic:dev://localhost:4334/osm")
+  (def uri2 "datomic:dev://localhost:4334/osm2")
   (d/create-database uri)
-  (d/delete-database "datomic:dev://localhost:4334/osm")
+  (d/create-database uri2)
+  (d/delete-database "datomic:dev://localhost:4334/osm2")
   (d/release conn)
   (def conn (d/connect uri))
+  (def conn2 (d/connect uri2))
   @(d/transact conn schema)
+  @(d/transact conn2 schema)
+
+  (def HASHED? true)
+  (ingest conn [(str path "mexico.osm.xml") (str path "usa.osm.xml") (str path "brazil.osm.xml")])
+  (def HASHED? false)
+  (ingest conn2 [(str path "mexico.osm.xml") (str path "usa.osm.xml") (str path "brazil.osm.xml")]))
 
 
-  (ingest conn (str path "mexico.osm.xml"))
-  (ingest conn (str path "usa.osm.xml"))
-  (ingest conn (str path "brazil.osm.xml"))
-  (ingest conn (str path "colombia.osm.xml"))
-
-  (d/request-index conn)
-
-  (:indexBasisT (d/db conn)))
-
-
-
-(def db (d/db conn))
 
 (def MEXICO_CITY (h3-cell 19.4326 -99.1331785 DEFAULT_H3_RES))
 (def NUBANK_OFFICE (h3-cell -23.5607406 -46.6760437, DEFAULT_H3_RES))
 (def PASADENA_CA (h3-cell 34.14764, -118.14296, DEFAULT_H3_RES))
 (def GHADI (h3-cell 32.76128 -79.99918 DEFAULT_H3_RES))
 
-(time (points-close-to db MEXICO_CITY))
 
-(points-close-to db GHADI)
-(points-close-to db NUBANK_OFFICE)
-
-(dotimes [_ 1000]
-  (prn (:api-ms (:io-stats (points-close-to db MEXICO_CITY)))))
-
-;; when location hashed 1.7ms to find everything in mexico city
-;; 0.29ms to find only the eids, no pull
+(def db (d/db conn))
+(def db2 (d/db conn2))
+(cache/clear (domain/system-cache))
+(println (:io-stats (points-close-to db MEXICO_CITY)))
+(cache/clear (domain/system-cache))
+(println (:io-stats (points-close-to db2 MEXICO_CITY)))

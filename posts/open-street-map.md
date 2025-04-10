@@ -40,7 +40,9 @@ Given this example map.
  :location/h3-region ""}
 ```
 
-Let's define a simple schema, a Location entity. OSM stands for "Open Street Map", we want to save the `id` and the `name` of the data set entries plus the generated h3-region given the latitude and longitud numbers.
+Let's create 2 databases with different partitioning strategies. One that has good data locality and a second one without any partitioning strategy. We will use the same schema for both to narrow the experiment to the partitioning property.
+
+OSM stands for "Open Street Map", we want to save the `id` and the `name` of the data set entries plus the generated h3-region given the latitude and longitud numbers.
 
 ```clojure
 (def schema
@@ -67,21 +69,24 @@ Let's define a simple schema, a Location entity. OSM stands for "Open Street Map
     :db/index true}])
 ```
 
-Then we can create the database
+Then we can create the databases.
 
 ```clojure
-(def uri "datomic:dev://localhost:4334/osm")
+(def uri "datomic:dev://localhost:4334/osm") ;; with partitioning strategy
+(def uri2 "datomic:dev://localhost:4334/osm2") ;; NO strategy
 (d/create-database uri)
+(d/create-database uri2)
 (def conn (d/connect uri))
-@(d/transact conn schema)
+(def conn2 (d/connect uri2))
 ```
 
 Persist the schema
 ```clojure
 @(d/transact conn schema)
+@(d/transact conn2 schema)
 ```
 
-Now that we have the schema transacted, we can proceed to ingest data from the xml datasets.
+Now that we have the schema transacted in both databases, we can proceed to ingest data from the xml datasets.
 
 I downloaded the OpenStreetMap dataset and imported all the places in MX/CO/BR/USA with this strategy. You can get them [here](link.to.files)
 
@@ -119,26 +124,156 @@ A simple way is to take a geohash (or Uber H3 location integer) at some chunky r
      :location/h3-region h3}))
 ```
 
-There are two helper functions, not included in the code block, `mix64`, _bitmixer, take an intermediate hash value that may not be thoroughly mixed and increase its entropy to obtain both better distribution and fewer collisions among hashes_ and `altmod`, _reduction of an integer x into a space [0,max], but faster than (mod x max). You can find the full tutorial code here._
+There are two helper functions, not included in the code block, `mix64`, *bitmixer, take an intermediate hash value that may not be thoroughly mixed and increase its entropy to obtain both better distribution and fewer collisions among hashes* and `altmod`, _reduction of an integer x into a space [0,max], but faster than (mod x max). You can find the full tutorial code here._
 
 Now we can create an `ingest` function that reads from the xml and transacts data to the database
 
 ```clojure
+(defn process-file
+  "reads file with-open and returns a vector with the xml/parse result"
+  [file]
+  (with-open [rdr (io/reader file)]
+    (into []
+          (comp (filter #(= (:tag %) :node)) ;; extract only <node ...>
+                (map #(-> % xml-node->data osm-node->tx-data)))
+          (:content (xml/parse rdr :include-node? #{:element})))))
+
 (defn ingest
-  "reads osm datasets, converts them into tx-data and transacts"
-  [conn osm-file]
-  (with-open [rdr (io/reader osm-file)]
-    (let [root (xml/parse rdr :include-node? #{:element})]
-      (transduce (comp (filter #(= (:tag %) :node)) ;; extract only <node ...>
-                       (map #(-> % xml-node->data osm-node->tx-data))
-                       (partition-all 1000))
-                 (completing
-                  (fn [conn batch]
-                    (d/transact conn batch)
-                    (println ".")
-                    conn))
-                 conn
-                 (:content root)))))
+  "reads osm datasets, converts them into tx-data, interleaves data between the diferent datasets and transacts"
+  [conn osm-files]
+  (let [interleaved-data (apply interleave (map process-file osm-files))]
+    (run! (fn [batch] (d/transact conn batch)(println "."))
+      (partition-all 1000 interleaved-data))))
+```
+
+and process the files and transact data
+
+```clojure
+(def path "/home/aldo/Downloads/place-info/") ;; Should be the path where you downloaded the files
+(def HASHED? true)
+(ingest conn [(str path "mexico.osm.xml") (str path "usa.osm.xml") (str path "brazil.osm.xml")])
+(def HASHED? false)
+(ingest conn2 [(str path "mexico.osm.xml") (str path "usa.osm.xml") (str path "brazil.osm.xml")])
 ```
 
 ### Query data and meassure
+
+Compare against both partitioning strategies.
+
+> Hypothesis: fewer :dev segments pulled and :dev-ms timing should be a considerable difference.
+
+Running the query more than once will get everything from cache. To make the difference most pronounced is to clear ocache prior to running a single query.
+
+Clear cache, then run this a single time `(:io-stats (points-close-to db MEXICO_CITY))`.
+
+```clojure
+(def MEXICO_CITY (h3-cell 19.4326 -99.1331785 DEFAULT_H3_RES))
+(def db (d/db conn))
+(def db2 (d/db conn2))
+
+(cache/clear (domain/system-cache))
+(println (:io-stats (points-close-to db MEXICO_CITY)))
+
+(cache/clear (domain/system-cache))
+(println (:io-stats (points-close-to db2 MEXICO_CITY)))
+```
+
+```clojure
+{:io-context :points/close,
+ :api :query,
+ :api-ms 41.63,
+ :reads {:dir 2985,
+         :aevt 2984,
+         :avet 2,
+         :aevt-load 3,
+         :deserialize-ms 3.83,
+         :deserialize 5,
+         :dev-ms 2.81,
+         :avet-load 2,
+         :dev 5,
+         :ocache 5}}
+
+{:io-context :points/close,
+ :api :query, :api-ms 89.27,
+ :reads {:dir 2985,
+         :aevt 3169,
+         :avet 2,
+         :aevt-load 47,
+         :deserialize-ms 40.28,
+         :deserialize 49,
+         :dev-ms 18.42,
+         :avet-load 2,
+         :dev 49,
+         :ocache 233}}
+```
+
+Focus on the following attributes `:api-ms` total roundtrip time,  `:aevt-load`, segments distribution, and `:dev` numbers of segments pulled from the storage layer.
+
+Comparing db vs db2,
+- `:api-ms`, it's 41.63 in `db` roughly the double in `db2` 89.27
+- `:dev`, it's 5 in db and 49 in db2
+- `:aevt-load`, the difference is huge, 2 in `db` and 47 in `db2`. Means more segments, spread around
+
+### Amplify the effect
+To make the impact more evident let's ingest the same data twice, that way the database will be bigger.
+
+```clojure
+(def path "/home/aldo/Downloads/place-info/") ;; Should be the path where you downloaded the files
+(def HASHED? true)
+(ingest conn [(str path "mexico.osm.xml") (str path "usa.osm.xml") (str path "brazil.osm.xml")])
+(def HASHED? false)
+(ingest conn2 [(str path "mexico.osm.xml") (str path "usa.osm.xml") (str path "brazil.osm.xml")])
+```
+
+then we run the queries again
+
+```clojure
+(def MEXICO_CITY (h3-cell 19.4326 -99.1331785 DEFAULT_H3_RES))
+(def db (d/db conn))
+(def db2 (d/db conn2))
+
+(cache/clear (domain/system-cache))
+(println (:io-stats (points-close-to db MEXICO_CITY)))
+
+(cache/clear (domain/system-cache))
+(println (:io-stats (points-close-to db2 MEXICO_CITY)))
+```
+
+```clojure
+{:io-context :points/close,
+ :api :query,
+ :api-ms 75.41,
+ :reads {:dir 11937,
+         :aevt 11936,
+         :avet 2,
+         :aevt-load 6,
+         :deserialize-ms 7.0,
+         :deserialize 8,
+         :dev-ms 3.99,
+         :avet-load 2,
+         :dev 8,
+         :ocache 8}}
+
+{:io-context :points/close,
+ :api :query,
+ :api-ms 217.33,
+ :reads {:dir 11937,
+         :aevt 12943,
+         :avet 2,
+         :aevt-load 120,
+         :deserialize-ms 96.67,
+         :deserialize 122,
+         :dev-ms 46.69,
+         :avet-load 2,
+         :dev 122,
+         :ocache 1126}}
+```
+
+Comparing db vs db2,
+- `:api-ms`, it's 75.41 in `db` almost triple in `db2` 217.33
+- `:dev`, it's 8 in db and 122 in db2
+- `:aevt-load`, the difference is even higher, 6 in `db` and 122 in `db2`. Means more segments, spread around
+
+## Conclusion
+
+There is no `right` way to partition data, it is context dependent and thinking about it impacts in the performance of the system, either positive or negative.
