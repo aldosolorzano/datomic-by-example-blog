@@ -1,0 +1,4 @@
+{:deps {org.clojure/clojure {:mvn/version "1.12.0"}
+        com.datomic/peer {:mvn/version "1.0.7260"}
+        com.uber/h3 {:mvn/version "4.1.1"}
+        org.clojure/data.xml {:mvn/version "0.2.0-alpha9"}}}
