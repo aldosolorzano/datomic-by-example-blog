@@ -1,19 +1,37 @@
-Title: How to use geolocation for partitions in Datomic
+Title: Optimize Datomic by using partitions: Use Geolocation as and Example
 Date: 2025-03-19
 Tags: datomic, clojure
 
+Do you have a growing Datomic database and you are thinking in some possible optimization you could do? Datomic stores data as segments and those segments contain datoms, have you ever wonder if it's possible to tell Datomic a strategy on "where" to store datoms?
+
 When fetching data we are looking for it in a physical place, it's better to have these data organized in ways that when asking for data of the same "domain" it's located in the same/or close place. For example in a library when you want to find books about phylosophy, ideally they should be sorted and placed in the phylosophy section. Otherwise you'll have to look also in the novels, science etc... making it more tedious.
 
-Datomic uses partitions to allocate data to a place, acting as a storage hint.
+> The purpose of partitioning is to facilitate database management and enhance performance.
 
-In this tutorial, I'll show you how to use Datomic partitions to group entities based on a geolocation region, I'll use Clojure as programming language and Uber H3 geolocation library, thus queries about MX  will fetch the partition that contains the entities related to this region, that means that further queries about the same region will leverage the partition data being in the cache and avoid the need to fetch more partitions.
+In this tutorial, I'll show you how to use Datomic partitions to group entities based on a geolocation region, I'll use Clojure as programming language and [Uber H3 geolocation library](https://h3geo.org/?uclick_id=07c8115a-02d6-4aa5-ad8a-7cce3a55afc5) for indexing geographie, thus queries about MX  will fetch the partition that contains the entities related to this region, that means that further queries about the same region will leverage the partition data being in the cache and avoid the need to fetch more partitions.
 
 ## What are Datomic Partitions
 
 Quoting the [documentation glossary](https://docs.datomic.com/glossary.html#partition)
 > A logical grouping of entities in a database. Partitions have unique qualified names. Every entity belongs to a partition that is assigned when the entity is created. Partitions act as a *storage hint*, so that larger systems can plan ahead for better locality of reference for entities that are *frequently accessed together*. Partitions are typically coarser grained than relational tables. Partitioning is invisible to the query system, and therefore has *no impact on the code* you write to access the database.
 
-## Code example with Clojure + OpenStreetMap Datasets
+## How Can We Leverage Partitions?
+
+Let's imagine that each color represents data associated with a specific customer. In that picture, we can see that the data from the same customer are closer to each other. That's because we enforced the partition, which improves data locality.
+
+Enforcing the partition key for data will help to read fewer segments furthermore fewer partitions.
+
+![Datomic high data locality](assets/high-data-locality.png)
+
+For example the cross mark green button customer in the “high locality” image above, all of his data is in partition 01 (one) segments. This means that if we want to retrieve the data or even transact new data for that customer, Datomic will have to read just three segments, and that will speed up the process.
+
+Now take a look at this next image
+
+![Datomic low data locality](assets/low-data-locality.png)
+
+In the image above we have what we call "low data locality". The data is spread out across the whole database, so to get the data of cross mark green button customer, Datomic will pull all the segments to get it, which will make queries and even transactions slower.
+
+## Partitions Code example with Clojure + OpenStreetMap Datasets
 
 ```clojure
 (defn points-close-to
@@ -160,7 +178,7 @@ and process the files and transact data
 
 Compare against both partitioning strategies.
 
-> Hypothesis: fewer :dev segments pulled and :dev-ms timing should be a considerable difference.
+> Hypothesis: fewer :dev segments pulled and :api-ms timing should be a considerable difference.
 
 Running the query more than once will get everything from cache. To make the difference most pronounced is to clear ocache prior to running a single query.
 
@@ -207,7 +225,14 @@ Clear cache, then run this a single time `(:io-stats (points-close-to db MEXICO_
          :ocache 233}}
 ```
 
-Focus on the following attributes `:api-ms` total roundtrip time,  `:aevt-load`, segments distribution, and `:dev` numbers of segments pulled from the storage layer.
+Focus on the following attributes:
+
+| key          | value                                              |
+|--------------|----------------------------------------------------|
+| `:api-ms`    | Total roundtrip time                               |
+| `:avet-load` | Segments distribution                              |
+| `:dev`       | Numbers of segments pulled from the storage layer. |
+
 
 Comparing db vs db2,
 - `:api-ms`, it's 41.63 in `db` roughly the double in `db2` 89.27
@@ -277,3 +302,7 @@ Comparing db vs db2,
 ## Conclusion
 
 There is no `right` way to partition data, it is context dependent and thinking about it impacts in the performance of the system, either positive or negative.
+
+In summary, implicit partitions in Datomic provide a more streamlined and flexible way to manage data locality and improve database performance by offering a simplified partition assignment strategy.
+
+After reading this post, how do you think you might leverage implicit partitions to improve data locality in one of the services you work on?
