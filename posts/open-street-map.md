@@ -1,4 +1,4 @@
-Title: Optimize Datomic by using partitions: Use Geolocation as and Example
+Title: Optimize Datomic with Partitions: Use Geolocation as and Example
 Date: 2025-03-19
 Tags: datomic, clojure
 
@@ -228,13 +228,13 @@ Clear cache, then run this a single time `(:io-stats (points-close-to db MEXICO_
 Focus on the following attributes:
 
 | key          | value                                              |
-|--------------|----------------------------------------------------|
+|:-------------|:---------------------------------------------------|
 | `:api-ms`    | Total roundtrip time                               |
 | `:avet-load` | Segments distribution                              |
 | `:dev`       | Numbers of segments pulled from the storage layer. |
 
 
-Comparing db vs db2,
+Comparing **db** vs **db2**
 - `:api-ms`, it's 41.63 in `db` roughly the double in `db2` 89.27
 - `:dev`, it's 5 in db and 49 in db2
 - `:aevt-load`, the difference is huge, 2 in `db` and 47 in `db2`. Means more segments, spread around
@@ -294,7 +294,7 @@ then we run the queries again
          :ocache 1126}}
 ```
 
-Comparing db vs db2,
+Comparing **db** vs **db2**
 - `:api-ms`, it's 75.41 in `db` almost triple in `db2` 217.33
 - `:dev`, it's 8 in db and 122 in db2
 - `:aevt-load`, the difference is even higher, 6 in `db` and 122 in `db2`. Means more segments, spread around
